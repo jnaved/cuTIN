@@ -28,63 +28,25 @@ else()
 endif()
 
 # Find OpenMP for multi-threaded CPU acceleration
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
-    message(STATUS "OpenMP found. Multi-threading enabled for OpenMP module.")
-else()
-    message(WARNING "OpenMP NOT found. OpenMP module will compile with stubs or fallback.")
-endif()
+find_package(OpenMP REQUIRED)
 
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# 1. Common Module (DataLoader, Image Processing, Utilities)
-add_library(tin_common STATIC
-    src/common/dataloader.cpp
+# Core Library (DataLoader + 3 Backends: Sequential, OpenMP, CUDA)
+add_library(cutin_core STATIC
+    src/dataloader.cpp
+    src/sequential.cpp
+    src/openmp.cpp
+    src/cuda.cu
 )
-target_include_directories(tin_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(cutin_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(cutin_core PUBLIC OpenMP::OpenMP_CXX)
 
-# 2. Sequential Reference Module (Teammate - Sequential)
-add_library(tin_sequential STATIC
-    src/sequential/conv.cpp
-    src/sequential/dense.cpp
-    src/sequential/train.cpp
-)
-target_include_directories(tin_sequential PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# 3. OpenMP Parallel Module (Teammate - OpenMP)
-add_library(tin_openmp STATIC
-    src/openmp/conv.cpp
-    src/openmp/dense.cpp
-    src/openmp/train.cpp
-)
-target_include_directories(tin_openmp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(tin_openmp PUBLIC OpenMP::OpenMP_CXX)
-endif()
-
-# 4. CUDA Accelerated Module
-add_library(tin_cuda STATIC
-    src/cuda/conv.cu
-    src/cuda/dense.cu
-    src/cuda/train.cu
-)
-target_include_directories(tin_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# Main Training & Inference Executable
+# Main Training & Benchmark Runner
 add_executable(cuTIN src/main.cpp)
-target_link_libraries(cuTIN PRIVATE
-    tin_cuda
-    tin_openmp
-    tin_sequential
-    tin_common
-)
+target_link_libraries(cuTIN PRIVATE cutin_core)
 
-# Test & Numerical Equivalence Suite Executable
+# Numerical Equivalence & Unit Test Suite
 add_executable(test_equivalence tests/test_equivalence.cpp)
-target_link_libraries(test_equivalence PRIVATE
-    tin_cuda
-    tin_openmp
-    tin_sequential
-    tin_common
-)
+target_link_libraries(test_equivalence PRIVATE cutin_core)
