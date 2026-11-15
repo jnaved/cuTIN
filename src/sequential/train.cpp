@@ -240,12 +240,12 @@ float seq_evaluate(const TinyImageNetDataset &val_data,
     }
 
     // Forward pass
-    seq_forward_pass(buffers.input, params, buffers, actual);
+    seq_forward_pass(buffers.input, params, buffers, batch_size);
 
     // Calculate probabilities
     seq_softmax_cross_entropy_forward_backward(
         buffers.fc2_out, buffers.labels, buffers.probs, buffers.dlogits,
-        nullptr, actual, ArchConfig::FC2_OUT);
+        nullptr, batch_size, ArchConfig::FC2_OUT);
 
     // Find predicted class
     for (int b = 0; b < actual; b++) {
@@ -350,7 +350,7 @@ void seq_train(const TinyImageNetDataset &train_data,
       // FORWARD PASS
       // =================================================
 
-      seq_forward_pass(buffers.input, params, buffers, actual);
+      seq_forward_pass(buffers.input, params, buffers, config.batch_size);
 
       // =================================================
       // SOFTMAX + CROSS-ENTROPY
@@ -358,7 +358,7 @@ void seq_train(const TinyImageNetDataset &train_data,
 
       seq_softmax_cross_entropy_forward_backward(
           buffers.fc2_out, buffers.labels, buffers.probs, buffers.dlogits,
-          buffers.batch_loss, actual, ArchConfig::FC2_OUT);
+          buffers.batch_loss, config.batch_size, ArchConfig::FC2_OUT);
 
       // =================================================
       // BACKWARD PASS
@@ -370,21 +370,21 @@ void seq_train(const TinyImageNetDataset &train_data,
 
       seq_linear_backward(buffers.dlogits, buffers.fc1_relu, params.w_fc2,
                           buffers.dfc1_relu, params.dw_fc2, params.db_fc2,
-                          actual, ArchConfig::FC1_OUT, ArchConfig::FC2_OUT);
+                          config.batch_size, ArchConfig::FC1_OUT, ArchConfig::FC2_OUT);
 
       // -------------------------------------------------
       // 2. ReLU3 backward
       // -------------------------------------------------
 
       seq_relu_backward(buffers.dfc1_relu, buffers.fc1_relu, buffers.dfc1_out,
-                        (size_t)actual * ArchConfig::FC1_OUT);
+                        (size_t)config.batch_size * ArchConfig::FC1_OUT);
 
       // -------------------------------------------------
       // 3. FC1 backward
       // -------------------------------------------------
 
       seq_linear_backward(buffers.dfc1_out, buffers.p2_out, params.w_fc1,
-                          buffers.dp2_out, params.dw_fc1, params.db_fc1, actual,
+                          buffers.dp2_out, params.dw_fc1, params.db_fc1, config.batch_size,
                           ArchConfig::FLATTEN_SIZE, ArchConfig::FC1_OUT);
 
       // -------------------------------------------------
@@ -392,7 +392,7 @@ void seq_train(const TinyImageNetDataset &train_data,
       // -------------------------------------------------
 
       seq_maxpool2d_backward(buffers.dp2_out, buffers.p2_mask, buffers.dc2_out,
-                             actual, ArchConfig::C2_OUT_C, ArchConfig::P2_OUT_H,
+                             config.batch_size, ArchConfig::C2_OUT_C, ArchConfig::P2_OUT_H,
                              ArchConfig::P2_OUT_W, ArchConfig::C2_OUT_H,
                              ArchConfig::C2_OUT_W, ArchConfig::P2_K,
                              ArchConfig::P2_STRIDE);
@@ -402,7 +402,7 @@ void seq_train(const TinyImageNetDataset &train_data,
       // -------------------------------------------------
 
       seq_relu_backward(buffers.dc2_out, buffers.c2_out, buffers.dc2_out,
-                        (size_t)actual * ArchConfig::C2_OUT_C *
+                        (size_t)config.batch_size * ArchConfig::C2_OUT_C *
                             ArchConfig::C2_OUT_H * ArchConfig::C2_OUT_W);
 
       // -------------------------------------------------
@@ -411,7 +411,7 @@ void seq_train(const TinyImageNetDataset &train_data,
 
       seq_conv2d_backward(
           buffers.dc2_out, buffers.p1_out, params.w_c2, buffers.dp1_out,
-          params.dw_c2, params.db_c2, actual, ArchConfig::C1_OUT_C,
+          params.dw_c2, params.db_c2, config.batch_size, ArchConfig::C1_OUT_C,
           ArchConfig::P1_OUT_H, ArchConfig::P1_OUT_W, ArchConfig::C2_OUT_C,
           ArchConfig::C2_K, ArchConfig::C2_PAD, ArchConfig::C2_STRIDE);
 
@@ -420,7 +420,7 @@ void seq_train(const TinyImageNetDataset &train_data,
       // -------------------------------------------------
 
       seq_maxpool2d_backward(buffers.dp1_out, buffers.p1_mask, buffers.dc1_out,
-                             actual, ArchConfig::C1_OUT_C, ArchConfig::P1_OUT_H,
+                             config.batch_size, ArchConfig::C1_OUT_C, ArchConfig::P1_OUT_H,
                              ArchConfig::P1_OUT_W, ArchConfig::C1_OUT_H,
                              ArchConfig::C1_OUT_W, ArchConfig::P1_K,
                              ArchConfig::P1_STRIDE);
@@ -430,7 +430,7 @@ void seq_train(const TinyImageNetDataset &train_data,
       // -------------------------------------------------
 
       seq_relu_backward(buffers.dc1_out, buffers.c1_out, buffers.dc1_out,
-                        (size_t)actual * ArchConfig::C1_OUT_C *
+                        (size_t)config.batch_size * ArchConfig::C1_OUT_C *
                             ArchConfig::C1_OUT_H * ArchConfig::C1_OUT_W);
 
       // -------------------------------------------------
@@ -439,7 +439,7 @@ void seq_train(const TinyImageNetDataset &train_data,
       // -------------------------------------------------
 
       seq_conv2d_backward(buffers.dc1_out, buffers.input, params.w_c1, nullptr,
-                          params.dw_c1, params.db_c1, actual, ArchConfig::IN_C,
+                          params.dw_c1, params.db_c1, config.batch_size, ArchConfig::IN_C,
                           ArchConfig::IN_H, ArchConfig::IN_W,
                           ArchConfig::C1_OUT_C, ArchConfig::C1_K,
                           ArchConfig::C1_PAD, ArchConfig::C1_STRIDE);

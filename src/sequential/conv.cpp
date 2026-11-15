@@ -241,16 +241,22 @@ void seq_conv2d_backward(const float* dy, const float* x,
     int input_size = B * C_in * H_in * W_in;
     int weight_size = C_out * C_in * K * K;
 
-    for (int i = 0; i < input_size; i++) {
-        dx[i] = 0.0f;
+    if (dx != nullptr) {
+        for (int i = 0; i < input_size; i++) {
+            dx[i] = 0.0f;
+        }
     }
 
-    for (int i = 0; i < weight_size; i++) {
-        dw[i] = 0.0f;
+    if (dw != nullptr) {
+        for (int i = 0; i < weight_size; i++) {
+            dw[i] = 0.0f;
+        }
     }
 
-    for (int i = 0; i < C_out; i++) {
-        db[i] = 0.0f;
+    if (db != nullptr) {
+        for (int i = 0; i < C_out; i++) {
+            db[i] = 0.0f;
+        }
     }
 
 
@@ -270,7 +276,9 @@ void seq_conv2d_backward(const float* dy, const float* x,
                     float grad = dy[output_index];
 
                     // Bias gradient
-                    db[co] += grad;
+                    if (db != nullptr) {
+                        db[co] += grad;
+                    }
 
                     // Input channel and kernel loops
                     for (int ci = 0; ci < C_in; ci++) {
@@ -293,12 +301,16 @@ void seq_conv2d_backward(const float* dy, const float* x,
                                         * K + kw;
 
                                     // Input gradient
-                                    dx[input_index] +=
-                                        grad * w[weight_index];
+                                    if (dx != nullptr) {
+                                        dx[input_index] +=
+                                            grad * w[weight_index];
+                                    }
 
                                     // Weight gradient
-                                    dw[weight_index] +=
-                                        grad * x[input_index];
+                                    if (dw != nullptr) {
+                                        dw[weight_index] +=
+                                            grad * x[input_index];
+                                    }
                                 }
                             }
                         }
