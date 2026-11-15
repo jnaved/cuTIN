@@ -1,77 +1,25 @@
 
 #include "network.hpp"
 #include <iostream>
+#include <cmath>
 
 namespace cutin {
 
 // =========================================================================
 // HELPER FUNCTIONS
-// Manual exponential and logarithm calculations.
-// No standard math functions are used.
+// Standard exponential and logarithm matching OpenMP and CUDA.
 // =========================================================================
 
 static float seq_exp(float x) {
-
-    // Prevent extremely small values from causing unnecessary calculations
-    if (x < -80.0f) {
-        return 0.0f;
-    }
-
-    // Range reduction: exp(x) = exp(x/16)^16
-    float value = x / 16.0f;
-
-    // Taylor series for exp(value)
-    float sum = 1.0f;
-    float term = 1.0f;
-
-    for (int i = 1; i <= 24; i++) {
-        term = term * value / (float)i;
-        sum += term;
-    }
-
-    // Raise the result to the 16th power
-    sum = sum * sum;
-    sum = sum * sum;
-    sum = sum * sum;
-    sum = sum * sum;
-
-    return sum;
+    return std::exp(x);
 }
 
 
 static float seq_log(float x) {
-
     if (x <= 0.0f) {
         return -80.0f;
     }
-
-    // Convert x into the range [0.5, 1]
-    float m = x;
-    float adjustment = 0.0f;
-
-    while (m > 1.0f) {
-        m = m / 2.0f;
-        adjustment += 0.69314718056f;
-    }
-
-    while (m < 0.5f) {
-        m = m * 2.0f;
-        adjustment -= 0.69314718056f;
-    }
-
-    // log(m) = 2 * (z + z^3/3 + z^5/5 + ...)
-    float z = (m - 1.0f) / (m + 1.0f);
-    float z_squared = z * z;
-
-    float term = z;
-    float sum = 0.0f;
-
-    for (int i = 1; i <= 39; i += 2) {
-        sum += term / (float)i;
-        term = term * z_squared;
-    }
-
-    return 2.0f * sum + adjustment;
+    return std::log(x);
 }
 
 

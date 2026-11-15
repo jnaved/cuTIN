@@ -121,66 +121,88 @@ void relu_forward(const float* x, float* y, size_t size) {
 
 } // namespace ref
 
-bool test_relu_cuda() {
-    std::cout << "[Test] Running ReLU CUDA Equivalence Test...";
+bool test_relu_all() {
+    std::cout << "[Test] Running ReLU Backend Equivalence Tests:\n";
     const size_t N = 1024;
-    std::vector<float> h_x(N), h_y_ref(N), h_y_cuda(N);
+    std::vector<float> h_x(N), h_y_ref(N), h_y_cuda(N), h_y_omp(N), h_y_seq(N);
     for (size_t i = 0; i < N; ++i) {
         h_x[i] = (static_cast<float>(i) - 512.0f) * 0.1f;
     }
 
     ref::relu_forward(h_x.data(), h_y_ref.data(), N);
 
+    // 1. CUDA
     float *d_x, *d_y;
     CUDA_CHECK(cudaMalloc(&d_x, N * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_y, N * sizeof(float)));
     CUDA_CHECK(cudaMemcpy(d_x, h_x.data(), N * sizeof(float), cudaMemcpyHostToDevice));
-
     cuda_relu_forward(d_x, d_y, N);
-
     CUDA_CHECK(cudaMemcpy(h_y_cuda.data(), d_y, N * sizeof(float), cudaMemcpyDeviceToHost));
     cudaFree(d_x); cudaFree(d_y);
 
-    bool pass = check_close(h_y_cuda.data(), h_y_ref.data(), N);
-    std::cout << (pass ? " PASSED\n" : " FAILED\n");
-    return pass;
+    // 2. OpenMP
+    omp_relu_forward(h_x.data(), h_y_omp.data(), N);
+
+    // 3. Sequential
+    seq_relu_forward(h_x.data(), h_y_seq.data(), N);
+
+    bool pass_cuda = check_close(h_y_cuda.data(), h_y_ref.data(), N);
+    bool pass_omp  = check_close(h_y_omp.data(), h_y_ref.data(), N);
+    bool pass_seq  = check_close(h_y_seq.data(), h_y_ref.data(), N);
+
+    std::cout << "  - CUDA vs Ref:       " << (pass_cuda ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - OpenMP vs Ref:     " << (pass_omp ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - Sequential vs Ref: " << (pass_seq ? "PASSED" : "FAILED") << "\n";
+
+    return pass_cuda && pass_omp && pass_seq;
 }
 
-bool test_maxpool2d_cuda() {
-    std::cout << "[Test] Running MaxPool2D CUDA Equivalence Test...";
+bool test_maxpool2d_all() {
+    std::cout << "[Test] Running MaxPool2D Backend Equivalence Tests:\n";
     int B = 2, C = 4, H_in = 8, W_in = 8, K = 2, stride = 2;
     int H_out = 4, W_out = 4;
     size_t in_size = B * C * H_in * W_in;
     size_t out_size = B * C * H_out * W_out;
 
-    std::vector<float> h_x(in_size), h_y_ref(out_size), h_y_cuda(out_size);
-    std::vector<int> h_mask_ref(out_size), h_mask_cuda(out_size);
+    std::vector<float> h_x(in_size), h_y_ref(out_size), h_y_cuda(out_size), h_y_omp(out_size), h_y_seq(out_size);
+    std::vector<int> h_mask_ref(out_size), h_mask_cuda(out_size), h_mask_omp(out_size), h_mask_seq(out_size);
 
     for (size_t i = 0; i < in_size; ++i) h_x[i] = static_cast<float>(i % 37) * 0.25f;
 
     ref::maxpool2d_forward(h_x.data(), h_y_ref.data(), h_mask_ref.data(),
                            B, C, H_in, W_in, K, stride);
 
+    // 1. CUDA
     float *d_x, *d_y;
     int *d_mask;
     CUDA_CHECK(cudaMalloc(&d_x, in_size * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_y, out_size * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_mask, out_size * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(d_x, h_x.data(), in_size * sizeof(float), cudaMemcpyHostToDevice));
-
     cuda_maxpool2d_forward(d_x, d_y, d_mask, B, C, H_in, W_in, K, stride);
-
     CUDA_CHECK(cudaMemcpy(h_y_cuda.data(), d_y, out_size * sizeof(float), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(h_mask_cuda.data(), d_mask, out_size * sizeof(int), cudaMemcpyDeviceToHost));
     cudaFree(d_x); cudaFree(d_y); cudaFree(d_mask);
 
-    bool pass = check_close(h_y_cuda.data(), h_y_ref.data(), out_size);
-    std::cout << (pass ? " PASSED\n" : " FAILED\n");
-    return pass;
+    // 2. OpenMP
+    omp_maxpool2d_forward(h_x.data(), h_y_omp.data(), h_mask_omp.data(), B, C, H_in, W_in, K, stride);
+
+    // 3. Sequential
+    seq_maxpool2d_forward(h_x.data(), h_y_seq.data(), h_mask_seq.data(), B, C, H_in, W_in, K, stride);
+
+    bool pass_cuda = check_close(h_y_cuda.data(), h_y_ref.data(), out_size);
+    bool pass_omp  = check_close(h_y_omp.data(), h_y_ref.data(), out_size);
+    bool pass_seq  = check_close(h_y_seq.data(), h_y_ref.data(), out_size);
+
+    std::cout << "  - CUDA vs Ref:       " << (pass_cuda ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - OpenMP vs Ref:     " << (pass_omp ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - Sequential vs Ref: " << (pass_seq ? "PASSED" : "FAILED") << "\n";
+
+    return pass_cuda && pass_omp && pass_seq;
 }
 
-bool test_conv2d_cuda() {
-    std::cout << "[Test] Running Conv2D CUDA Equivalence Test...";
+bool test_conv2d_all() {
+    std::cout << "[Test] Running Conv2D Backend Equivalence Tests:\n";
     int B = 2, C_in = 3, H_in = 8, W_in = 8;
     int C_out = 4, K = 3, pad = 1, stride = 1;
     int H_out = 8, W_out = 8;
@@ -190,7 +212,9 @@ bool test_conv2d_cuda() {
     size_t b_size = C_out;
     size_t y_size = B * C_out * H_out * W_out;
 
-    std::vector<float> h_x(x_size), h_w(w_size), h_b(b_size), h_y_ref(y_size), h_y_cuda(y_size);
+    std::vector<float> h_x(x_size), h_w(w_size), h_b(b_size), h_y_ref(y_size);
+    std::vector<float> h_y_cuda(y_size), h_y_omp(y_size), h_y_seq(y_size);
+
     for (size_t i = 0; i < x_size; ++i) h_x[i] = std::sin(static_cast<float>(i));
     for (size_t i = 0; i < w_size; ++i) h_w[i] = std::cos(static_cast<float>(i)) * 0.1f;
     for (size_t i = 0; i < b_size; ++i) h_b[i] = 0.5f;
@@ -198,6 +222,7 @@ bool test_conv2d_cuda() {
     ref::conv2d_forward(h_x.data(), h_w.data(), h_b.data(), h_y_ref.data(),
                         B, C_in, H_in, W_in, C_out, K, pad, stride);
 
+    // 1. CUDA
     float *d_x, *d_w, *d_b, *d_y;
     CUDA_CHECK(cudaMalloc(&d_x, x_size * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_w, w_size * sizeof(float)));
@@ -213,26 +238,43 @@ bool test_conv2d_cuda() {
     CUDA_CHECK(cudaMemcpy(h_y_cuda.data(), d_y, y_size * sizeof(float), cudaMemcpyDeviceToHost));
     cudaFree(d_x); cudaFree(d_w); cudaFree(d_b); cudaFree(d_y);
 
-    bool pass = check_close(h_y_cuda.data(), h_y_ref.data(), y_size);
-    std::cout << (pass ? " PASSED\n" : " FAILED\n");
-    return pass;
+    // 2. OpenMP
+    omp_conv2d_forward(h_x.data(), h_w.data(), h_b.data(), h_y_omp.data(),
+                       B, C_in, H_in, W_in, C_out, K, pad, stride);
+
+    // 3. Sequential
+    seq_conv2d_forward(h_x.data(), h_w.data(), h_b.data(), h_y_seq.data(),
+                       B, C_in, H_in, W_in, C_out, K, pad, stride);
+
+    bool pass_cuda = check_close(h_y_cuda.data(), h_y_ref.data(), y_size);
+    bool pass_omp  = check_close(h_y_omp.data(), h_y_ref.data(), y_size);
+    bool pass_seq  = check_close(h_y_seq.data(), h_y_ref.data(), y_size);
+
+    std::cout << "  - CUDA vs Ref:       " << (pass_cuda ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - OpenMP vs Ref:     " << (pass_omp ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - Sequential vs Ref: " << (pass_seq ? "PASSED" : "FAILED") << "\n";
+
+    return pass_cuda && pass_omp && pass_seq;
 }
 
-bool test_linear_cuda() {
-    std::cout << "[Test] Running Linear / Dense CUDA Equivalence Test...";
+bool test_linear_all() {
+    std::cout << "[Test] Running Linear / Dense Backend Equivalence Tests:\n";
     int B = 4, in_f = 16, out_f = 8;
     size_t x_size = B * in_f;
     size_t w_size = out_f * in_f;
     size_t b_size = out_f;
     size_t y_size = B * out_f;
 
-    std::vector<float> h_x(x_size), h_w(w_size), h_b(b_size), h_y_ref(y_size), h_y_cuda(y_size);
+    std::vector<float> h_x(x_size), h_w(w_size), h_b(b_size), h_y_ref(y_size);
+    std::vector<float> h_y_cuda(y_size), h_y_omp(y_size), h_y_seq(y_size);
+
     for (size_t i = 0; i < x_size; ++i) h_x[i] = static_cast<float>(i % 5) * 0.2f;
     for (size_t i = 0; i < w_size; ++i) h_w[i] = static_cast<float>(i % 7) * 0.1f;
     for (size_t i = 0; i < b_size; ++i) h_b[i] = 0.1f;
 
     ref::linear_forward(h_x.data(), h_w.data(), h_b.data(), h_y_ref.data(), B, in_f, out_f);
 
+    // 1. CUDA
     float *d_x, *d_w, *d_b, *d_y;
     CUDA_CHECK(cudaMalloc(&d_x, x_size * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_w, w_size * sizeof(float)));
@@ -248,9 +290,21 @@ bool test_linear_cuda() {
     CUDA_CHECK(cudaMemcpy(h_y_cuda.data(), d_y, y_size * sizeof(float), cudaMemcpyDeviceToHost));
     cudaFree(d_x); cudaFree(d_w); cudaFree(d_b); cudaFree(d_y);
 
-    bool pass = check_close(h_y_cuda.data(), h_y_ref.data(), y_size);
-    std::cout << (pass ? " PASSED\n" : " FAILED\n");
-    return pass;
+    // 2. OpenMP
+    omp_linear_forward(h_x.data(), h_w.data(), h_b.data(), h_y_omp.data(), B, in_f, out_f);
+
+    // 3. Sequential
+    seq_linear_forward(h_x.data(), h_w.data(), h_b.data(), h_y_seq.data(), B, in_f, out_f);
+
+    bool pass_cuda = check_close(h_y_cuda.data(), h_y_ref.data(), y_size);
+    bool pass_omp  = check_close(h_y_omp.data(), h_y_ref.data(), y_size);
+    bool pass_seq  = check_close(h_y_seq.data(), h_y_ref.data(), y_size);
+
+    std::cout << "  - CUDA vs Ref:       " << (pass_cuda ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - OpenMP vs Ref:     " << (pass_omp ? "PASSED" : "FAILED") << "\n";
+    std::cout << "  - Sequential vs Ref: " << (pass_seq ? "PASSED" : "FAILED") << "\n";
+
+    return pass_cuda && pass_omp && pass_seq;
 }
 
 int main() {
@@ -259,16 +313,14 @@ int main() {
     std::cout << "=======================================================\n";
 
     bool all_pass = true;
-    all_pass &= test_relu_cuda();
-    all_pass &= test_maxpool2d_cuda();
-    all_pass &= test_conv2d_cuda();
-    all_pass &= test_linear_cuda();
+    all_pass &= test_relu_all();
+    all_pass &= test_maxpool2d_all();
+    all_pass &= test_conv2d_all();
+    all_pass &= test_linear_all();
 
     std::cout << "=======================================================\n";
     if (all_pass) {
-        std::cout << " ALL CUDA UNIT TESTS PASSED SUCCESSFULLY!\n";
-        std::cout << " (Teammates can hook in seq_* and omp_* functions\n";
-        std::cout << "  into this harness to verify their implementations!)\n";
+        std::cout << " ALL BACKENDS (CUDA, OpenMP, Sequential) PASSED EQUIVALENCE!\n";
     } else {
         std::cout << " ONE OR MORE TESTS FAILED.\n";
     }
