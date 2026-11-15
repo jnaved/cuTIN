@@ -23,7 +23,6 @@
  */
 
 #include "network.hpp"
-#include "utils.hpp"
 #include <iostream>
 #include <vector>
 #include <cmath>
