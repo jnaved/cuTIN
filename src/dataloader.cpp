@@ -161,4 +161,138 @@ void ModelParameters::init_weights(unsigned int seed) {
     std::fill(b_fc2, b_fc2 + ArchConfig::FC2_B_SIZE, 0.0f);
 }
 
+bool ModelParameters::save_to_file(const std::string& filepath) const {
+    std::ofstream out(filepath, std::ios::binary);
+    if (!out.is_open()) {
+        std::cerr << "[Error] Failed to open " << filepath << " for writing model weights.\n";
+        return false;
+    }
+    const char magic[8] = "CUTIN_M";
+    out.write(magic, 8);
+    out.write(reinterpret_cast<const char*>(w_c1), ArchConfig::C1_W_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(b_c1), ArchConfig::C1_B_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(w_c2), ArchConfig::C2_W_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(b_c2), ArchConfig::C2_B_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(w_fc1), ArchConfig::FC1_W_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(b_fc1), ArchConfig::FC1_B_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(w_fc2), ArchConfig::FC2_W_SIZE * sizeof(float));
+    out.write(reinterpret_cast<const char*>(b_fc2), ArchConfig::FC2_B_SIZE * sizeof(float));
+    return out.good();
+}
+
+bool ModelParameters::load_from_file(const std::string& filepath) {
+    std::ifstream in(filepath, std::ios::binary);
+    if (!in.is_open()) {
+        std::cerr << "[Error] Failed to open " << filepath << " for reading model weights.\n";
+        return false;
+    }
+    char magic[8] = {0};
+    in.read(magic, 8);
+    if (std::strncmp(magic, "CUTIN_M", 7) != 0) {
+        std::cerr << "[Error] Invalid model file format in " << filepath << "\n";
+        return false;
+    }
+    in.read(reinterpret_cast<char*>(w_c1), ArchConfig::C1_W_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(b_c1), ArchConfig::C1_B_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(w_c2), ArchConfig::C2_W_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(b_c2), ArchConfig::C2_B_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(w_fc1), ArchConfig::FC1_W_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(b_fc1), ArchConfig::FC1_B_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(w_fc2), ArchConfig::FC2_W_SIZE * sizeof(float));
+    in.read(reinterpret_cast<char*>(b_fc2), ArchConfig::FC2_B_SIZE * sizeof(float));
+    return in.good();
+}
+
+bool TinyImageNetDataset::load_words(const std::string& data_root) {
+    if (wnids_.empty()) {
+        if (!load_class_metadata(data_root)) return false;
+    }
+    std::string words_path = data_root + "/words.txt";
+    std::ifstream f(words_path);
+    if (!f.is_open()) return false;
+    wnid_to_words_.clear();
+    std::string line;
+    while (std::getline(f, line)) {
+        size_t tab = line.find('\t');
+        if (tab != std::string::npos) {
+            std::string wnid = line.substr(0, tab);
+            std::string desc = line.substr(tab + 1);
+            while (!desc.empty() && (desc.back() == '\r' || desc.back() == ' ')) desc.pop_back();
+            wnid_to_words_[wnid] = desc;
+        }
+    }
+    return true;
+}
+
+std::string TinyImageNetDataset::get_class_wnid(int class_idx) const {
+    if (class_idx >= 0 && class_idx < static_cast<int>(wnids_.size())) {
+        return wnids_[class_idx];
+    }
+    return "unknown";
+}
+
+std::string TinyImageNetDataset::get_class_description(int class_idx) const {
+    std::string wnid = get_class_wnid(class_idx);
+    auto it = wnid_to_words_.find(wnid);
+    if (it != wnid_to_words_.end()) {
+        return wnid + " (" + it->second + ")";
+    }
+    return wnid;
+}
+
+bool TinyImageNetDataset::load_single_image(const std::string& filepath, float* out_image) {
+    int w = 0, h = 0, comp = 0;
+    unsigned char* data = stbi_load(filepath.c_str(), &w, &h, &comp, CHANNELS);
+    if (!data) {
+        std::cerr << "[Error] Failed to load image: " << filepath << "\n";
+        return false;
+    }
+
+    if (w == WIDTH && h == HEIGHT) {
+        // Direct conversion
+        for (int c = 0; c < CHANNELS; ++c) {
+            for (int y = 0; y < HEIGHT; ++y) {
+                for (int x = 0; x < WIDTH; ++x) {
+                    out_image[(c * HEIGHT + y) * WIDTH + x] =
+                        static_cast<float>(data[(y * WIDTH + x) * CHANNELS + c]) / 255.0f;
+                }
+            }
+        }
+    } else {
+        // High-quality bilinear resize to 64x64
+        float x_ratio = static_cast<float>(w) / static_cast<float>(WIDTH);
+        float y_ratio = static_cast<float>(h) / static_cast<float>(HEIGHT);
+        for (int c = 0; c < CHANNELS; ++c) {
+            for (int dy = 0; dy < HEIGHT; ++dy) {
+                float sy = (dy + 0.5f) * y_ratio - 0.5f;
+                int y_low = static_cast<int>(std::floor(sy));
+                int y_high = std::min(y_low + 1, h - 1);
+                y_low = std::max(y_low, 0);
+                float y_weight = std::max(sy - y_low, 0.0f);
+
+                for (int dx = 0; dx < WIDTH; ++dx) {
+                    float sx = (dx + 0.5f) * x_ratio - 0.5f;
+                    int x_low = static_cast<int>(std::floor(sx));
+                    int x_high = std::min(x_low + 1, w - 1);
+                    x_low = std::max(x_low, 0);
+                    float x_weight = std::max(sx - x_low, 0.0f);
+
+                    float p00 = data[(y_low * w + x_low) * CHANNELS + c];
+                    float p10 = data[(y_low * w + x_high) * CHANNELS + c];
+                    float p01 = data[(y_high * w + x_low) * CHANNELS + c];
+                    float p11 = data[(y_high * w + x_high) * CHANNELS + c];
+
+                    float val = (p00 * (1.0f - x_weight) + p10 * x_weight) * (1.0f - y_weight)
+                              + (p01 * (1.0f - x_weight) + p11 * x_weight) * y_weight;
+
+                    out_image[(c * HEIGHT + dy) * WIDTH + dx] = val / 255.0f;
+                }
+            }
+        }
+    }
+
+    stbi_image_free(data);
+    return true;
+}
+
 } // namespace cutin

@@ -68,3 +68,6 @@ Testing/
 .cache/
 
 tiny-imagenet-200
+*.bin
+*.csv
+*.docx

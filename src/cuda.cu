@@ -488,6 +488,12 @@ void cuda_train(const TinyImageNetDataset& train_data, const TinyImageNetDataset
     CPUTimer epoch_timer, batch_timer;
     size_t total_batches = (train_data.size() + config.batch_size - 1) / config.batch_size;
 
+    std::string stats_file = config.stats_file.empty() ? "cuda_stats.csv" : config.stats_file;
+    std::ofstream csv(stats_file);
+    if (csv.is_open()) {
+        csv << "epoch,train_loss,train_acc_pct,train_error_pct,val_acc_pct,val_error_pct,epoch_time_sec,throughput_img_sec\n";
+    }
+
     for (int epoch = 1; epoch <= config.epochs; ++epoch) {
         epoch_timer.start();
         float epoch_loss = 0.0f;
@@ -539,9 +545,15 @@ void cuda_train(const TinyImageNetDataset& train_data, const TinyImageNetDataset
 
         double ep_ms = epoch_timer.stop();
         if (samples_processed == 0) break;
+        float tr_loss = epoch_loss / samples_processed;
+        float tr_acc = 100.0f * epoch_correct / samples_processed;
+        float tr_err = 100.0f - tr_acc;
+        float val_acc = 0.0f;
+        float val_err = 0.0f;
+
         std::cout << "\n--> Epoch " << epoch << " Finished in " << std::fixed << std::setprecision(2) << ep_ms / 1000.0 << "s"
-                  << " | Train Loss: " << (epoch_loss / samples_processed)
-                  << " | Train Acc: " << (100.0f * epoch_correct / samples_processed) << "%\n";
+                  << " | Train Loss: " << tr_loss
+                  << " | Train Acc: " << tr_acc << "%\n";
 
         if (val_data.size() > 0) {
             CUDA_CHECK(cudaMemcpy(h_params.w_c1, d_p.w_c1, ArchConfig::C1_W_SIZE * sizeof(float), cudaMemcpyDeviceToHost));
@@ -552,12 +564,32 @@ void cuda_train(const TinyImageNetDataset& train_data, const TinyImageNetDataset
             CUDA_CHECK(cudaMemcpy(h_params.b_fc1, d_p.b_fc1, ArchConfig::FC1_B_SIZE * sizeof(float), cudaMemcpyDeviceToHost));
             CUDA_CHECK(cudaMemcpy(h_params.w_fc2, d_p.w_fc2, ArchConfig::FC2_W_SIZE * sizeof(float), cudaMemcpyDeviceToHost));
             CUDA_CHECK(cudaMemcpy(h_params.b_fc2, d_p.b_fc2, ArchConfig::FC2_B_SIZE * sizeof(float), cudaMemcpyDeviceToHost));
-            float val_acc = cuda_evaluate(val_data, h_params, config.batch_size);
+            val_acc = cuda_evaluate(val_data, h_params, config.batch_size);
+            val_err = 100.0f - val_acc;
             std::cout << "--> Validation Accuracy: " << std::setprecision(2) << val_acc << "%\n";
+        }
+
+        double ep_sec = ep_ms / 1000.0;
+        double throughput = (ep_sec > 0.0) ? (samples_processed / ep_sec) : 0.0;
+        if (csv.is_open()) {
+            csv << epoch << "," << std::fixed << std::setprecision(4) << tr_loss << ","
+                << std::setprecision(2) << tr_acc << "," << tr_err << ","
+                << val_acc << "," << val_err << ","
+                << ep_sec << "," << throughput << "\n";
+            csv.flush();
         }
     }
 
     free_gpu_params(d_p, &h_params);
+
+    std::string model_file = config.model_save_path.empty() ? "cuda_model.bin" : config.model_save_path;
+    if (h_params.save_to_file(model_file)) {
+        std::cout << "--> Model checkpoint successfully saved to: " << model_file << "\n";
+    }
+    if (csv.is_open()) {
+        std::cout << "--> Epoch training & testing statistics saved to: " << stats_file << "\n";
+    }
+
     std::cout << "=======================================================\n"
               << " CUDA Training Completed Successfully!\n"
               << "=======================================================\n";
