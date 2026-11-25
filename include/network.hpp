@@ -2,6 +2,7 @@
 #define CUTIN_NETWORK_HPP
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -97,6 +98,8 @@ struct TrainingConfig {
     std::string data_dir = "tiny-imagenet-200";
     int max_train_samples = -1;
     int max_val_samples = -1;
+    std::string stats_file = "";
+    std::string model_save_path = "";
 };
 
 // Execution backend selector
@@ -128,6 +131,8 @@ struct ModelParameters {
     void allocate_host();
     void free_host();
     void init_weights(unsigned int seed = 42);
+    bool save_to_file(const std::string& filepath) const;
+    bool load_from_file(const std::string& filepath);
 };
 
 // High-resolution CPU Timer
@@ -182,10 +187,16 @@ public:
     static constexpr int NUM_CLASSES = 200;
     static constexpr int IMAGE_SIZE = CHANNELS * HEIGHT * WIDTH; // 12288
 
+    bool load_words(const std::string& data_root);
+    std::string get_class_description(int class_idx) const;
+    std::string get_class_wnid(int class_idx) const;
+    static bool load_single_image(const std::string& filepath, float* out_image);
+
 private:
     std::vector<ImageSample> samples_;
     std::vector<std::string> wnids_;
     std::unordered_map<std::string, int> wnid_to_idx_;
+    std::unordered_map<std::string, std::string> wnid_to_words_;
     bool load_class_metadata(const std::string& data_root);
 };
 
@@ -234,6 +245,9 @@ void cuda_softmax_cross_entropy_forward_backward(const float* d_logits, const in
 void cuda_sgd_update(float* d_w, float* d_dw, float* d_vw, float* d_b, float* d_db, float* d_vb, size_t w_size, size_t b_size, float lr, float momentum, float weight_decay);
 void cuda_train(const TinyImageNetDataset& train_data, const TinyImageNetDataset& val_data, ModelParameters& params, const TrainingConfig& config);
 float cuda_evaluate(const TinyImageNetDataset& val_data, const ModelParameters& params, int batch_size);
+
+// Image inference and prediction
+void run_inference(const std::string& image_path, const std::string& model_path, const std::string& data_dir);
 
 } // namespace cutin
 
